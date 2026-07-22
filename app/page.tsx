@@ -25,9 +25,12 @@ export default function Home() {
           Psalm 119:105
         </p>
 
-        <button className="bg-amber-700 hover:bg-amber-800 text-white text-xl px-10 py-4 rounded-full transition duration-300 shadow-lg">
-          Start Quiz
-        </button>
+        <a
+  href="/quiz"
+  className="inline-block bg-amber-700 hover:bg-amber-800 text-white text-xl px-8 py-4 rounded-xl"
+>
+  Start Quiz
+</a>
 
         <div className="mt-12 text-gray-500">
           © 2026 Logos Quiz
