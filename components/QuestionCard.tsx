@@ -1,6 +1,6 @@
 interface QuestionCardProps {
   questionNumber: number;
-  totalQuestions: number;
+  totalQuestions?: number; // <--- The magic question mark!
   question: string;
   reference?: string;
 }
@@ -13,11 +13,11 @@ export default function QuestionCard({
 }: QuestionCardProps) {
   return (
     <div className="mb-6">
-      <p className="text-lg text-gray-600">
-        Question {questionNumber} of {totalQuestions}
+      <p className="text-lg text-gray-600 font-medium">
+        ചോദ്യം (Question) {questionNumber} {totalQuestions ? `of ${totalQuestions}` : ''}
       </p>
 
-      <div className="mt-4 text-2xl font-semibold">
+      <div className="mt-4 text-2xl font-semibold leading-relaxed text-gray-800">
         {question}
       </div>
 
