@@ -12,6 +12,11 @@ import QuestionCard from "@/components/QuestionCard";
 import AnswerInput from "@/components/AnswerInput";
 import ProgressBar from "@/components/ProgressBar";
 
+// --- THE FIX: We extend your existing blueprint so it accepts 'options' ---
+interface ExtendedQuizQuestion extends QuizQuestion {
+  options?: string[];
+}
+
 export default function QuizPage() {
   const params = useParams();
   const quizId = (params.id || params.quizId) as string; 
@@ -60,7 +65,8 @@ export default function QuizPage() {
   }
 
   const quizData = currentQuiz.questions || [];
-  const currentQuestion: QuizQuestion = quizData[currentIndex] || {};
+  // Using our new Extended blueprint here!
+  const currentQuestion: ExtendedQuizQuestion = quizData[currentIndex] || {};
   const totalQuestions = quizData.length;
   const attemptedCount = answers.length;
   const currentMarks = answers.filter(a => a.isCorrect).length;
