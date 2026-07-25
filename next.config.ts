@@ -1,7 +1,8 @@
 import type { NextConfig } from "next";
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // This tells Turbopack to ignore our older document parsers
+  serverExternalPackages: ["pdf-parse", "mammoth"],
 };
 
 export default nextConfig;

@@ -1,9 +1,12 @@
-export interface QuizQuestion {
+export type QuizQuestion = {
   id: number;
-  book: string;
-  chapter: number;
   question: string;
-  acceptedAnswers: string[];
-  reference?: string;
-  marks: number;
-}
+  answer: string | string[]; // Now accepts a single string OR an array of acceptable answers
+  reference?: string; // Optional field for "റൂത്ത് 1:1"
+};
+
+export type UserAnswerRecord = {
+  questionId: number;
+  userAnswer: string;
+  isCorrect: boolean;
+};
