@@ -1,12 +1,12 @@
-export type QuizQuestion = {
+export interface QuizQuestion {
   id: number;
   question: string;
-  answer: string | string[]; // Now accepts a single string OR an array of acceptable answers
-  reference?: string; // Optional field for "റൂത്ത് 1:1"
-};
+  answer: any;
+  options?: string[];
+}
 
-export type UserAnswerRecord = {
+export interface UserAnswerRecord {
   questionId: number;
   userAnswer: string;
   isCorrect: boolean;
-};
+}
