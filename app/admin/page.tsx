@@ -13,9 +13,8 @@ export default function AdminPage() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [successMessage, setSuccessMessage] = useState("");
   
-  const [bookTitle, setBookTitle] = useState("ruth");
-  const [chapterNum, setChapterNum] = useState("intro");
-  const [quizId, setQuizId] = useState("ruth-intro");
+  const [bookTitle, setBookTitle] = useState("സാമുവേൽ (Samuel)");
+  const [chapterNum, setChapterNum] = useState("1");
 
   // Check if you are already logged in
   useEffect(() => {
@@ -24,13 +23,6 @@ export default function AdminPage() {
       setIsAuthenticated(true);
     }
   }, []);
-
-  useEffect(() => {
-    const cleanBook = bookTitle.toLowerCase().trim().replace(/\s+/g, '-');
-    if (cleanBook && chapterNum) {
-      setQuizId(`${cleanBook}-${chapterNum}`);
-    }
-  }, [bookTitle, chapterNum]);
 
   const handleLogin = (e: React.FormEvent) => {
     e.preventDefault();
@@ -44,7 +36,7 @@ export default function AdminPage() {
   };
 
   const handleUpload = async () => {
-    if (!file || !quizId || !bookTitle || !chapterNum) {
+    if (!file || !bookTitle || !chapterNum) {
       alert("Please fill in all fields and select a file.");
       return;
     }
@@ -52,9 +44,12 @@ export default function AdminPage() {
     setIsProcessing(true);
     setSuccessMessage("");
 
+    // Generate a 100% unique, URL-safe ID based on the exact millisecond of upload
+    const uniqueId = Date.now().toString();
+
     const formData = new FormData();
     formData.append("document", file);
-    formData.append("quizId", quizId);
+    formData.append("quizId", uniqueId);
     formData.append("book", bookTitle);
     formData.append("chapter", chapterNum);
     // Send the secret key to the backend to prove you are authorized
@@ -69,14 +64,14 @@ export default function AdminPage() {
       const data = await response.json();
       
       if (response.ok) {
-        setSuccessMessage(`✅ Successfully parsed ${data.questionCount} questions and saved to database as ${quizId}!`);
+        setSuccessMessage(`✅ Successfully parsed ${data.questionCount} questions and saved to database!`);
         setFile(null);
       } else {
         alert("Error parsing document: " + data.error);
       }
     } catch (error) {
       console.error("Upload failed", error);
-      alert("Failed to connect to the server.");
+      alert("Failed to connect to the server. The process may still be running in the background.");
     } finally {
       setIsProcessing(false);
     }
@@ -132,13 +127,13 @@ export default function AdminPage() {
           
           <div className="space-y-4 mb-6">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Book Name (English)</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Book Name (Malayalam & English)</label>
               <input 
                 type="text" 
                 value={bookTitle} 
                 onChange={e => setBookTitle(e.target.value)} 
                 className="w-full p-2 border rounded" 
-                placeholder="e.g. ruth, genesis" 
+                placeholder="e.g. സാമുവേൽ (Samuel)" 
               />
             </div>
             
@@ -158,17 +153,6 @@ export default function AdminPage() {
                 <option value="mock-test" className="font-bold text-purple-600">Mock Test</option>
               </select>
             </div>
-
-            <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Unique Quiz ID</label>
-              <input 
-                type="text" 
-                value={quizId} 
-                onChange={e => setQuizId(e.target.value)} 
-                className="w-full p-2 border rounded bg-gray-50 text-gray-600" 
-                placeholder="e.g. ruth-2" 
-              />
-            </div>
           </div>
 
           <input 
@@ -185,7 +169,7 @@ export default function AdminPage() {
               file && !isProcessing ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
             }`}
           >
-            {isProcessing ? "Processing via AI..." : "Parse & Save to Database"}
+            {isProcessing ? "Processing via AI (This may take up to 5 mins)..." : "Parse & Save to Database"}
           </button>
 
           {successMessage && (
