@@ -15,8 +15,10 @@ export default function AdminPage() {
   
   const [bookTitle, setBookTitle] = useState("സാമുവേൽ (Samuel)");
   const [chapterNum, setChapterNum] = useState("1");
+  
+  // State to hold the questions for the preview window
+  const [previewData, setPreviewData] = useState<any[] | null>(null);
 
-  // Check if you are already logged in
   useEffect(() => {
     setIsMounted(true);
     if (localStorage.getItem("adminKey") === "logos2026") {
@@ -35,6 +37,7 @@ export default function AdminPage() {
     }
   };
 
+  // Upload New Document
   const handleUpload = async () => {
     if (!file || !bookTitle || !chapterNum) {
       alert("Please fill in all fields and select a file.");
@@ -43,8 +46,8 @@ export default function AdminPage() {
     
     setIsProcessing(true);
     setSuccessMessage("");
+    setPreviewData(null); // Clear previous preview
 
-    // Generate a 100% unique, URL-safe ID based on the exact millisecond of upload
     const uniqueId = Date.now().toString();
 
     const formData = new FormData();
@@ -52,7 +55,6 @@ export default function AdminPage() {
     formData.append("quizId", uniqueId);
     formData.append("book", bookTitle);
     formData.append("chapter", chapterNum);
-    // Send the secret key to the backend to prove you are authorized
     formData.append("adminKey", localStorage.getItem("adminKey") || "");
 
     try {
@@ -66,6 +68,9 @@ export default function AdminPage() {
       if (response.ok) {
         setSuccessMessage(`✅ Successfully parsed ${data.questionCount} questions and saved to database!`);
         setFile(null);
+        if (data.questions) {
+          setPreviewData(data.questions);
+        }
       } else {
         alert("Error parsing document: " + data.error);
       }
@@ -77,11 +82,48 @@ export default function AdminPage() {
     }
   };
 
+  // Fetch Existing Document from Supabase
+  const handleFetchExisting = async () => {
+    if (!bookTitle || !chapterNum) {
+      alert("Please enter a Book Name and Chapter to search.");
+      return;
+    }
+
+    setIsProcessing(true);
+    setSuccessMessage("");
+    setPreviewData(null);
+
+    try {
+      const response = await fetch("/api/get-quiz", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          book: bookTitle,
+          chapter: chapterNum,
+          adminKey: localStorage.getItem("adminKey") || "",
+        }),
+      });
+
+      const data = await response.json();
+
+      if (response.ok) {
+        setPreviewData(data.questions);
+        setSuccessMessage(`✅ Successfully loaded ${data.questions.length} questions from the database!`);
+      } else {
+        alert(data.error);
+      }
+    } catch (error) {
+      console.error("Fetch failed", error);
+      alert("Failed to fetch the quiz from the server.");
+    } finally {
+      setIsProcessing(false);
+    }
+  };
+
   const chapterNumbers = Array.from({ length: 50 }, (_, i) => i + 1);
 
   if (!isMounted) return null;
 
-  // --- LOGIN SCREEN UI ---
   if (!isAuthenticated) {
     return (
       <div className="max-w-md mx-auto mt-32 p-8 bg-white rounded-lg shadow-lg border border-gray-200 text-center">
@@ -102,9 +144,8 @@ export default function AdminPage() {
     );
   }
 
-  // --- MAIN ADMIN DASHBOARD UI ---
   return (
-    <div className="max-w-4xl mx-auto p-8 mt-10">
+    <div className="max-w-5xl mx-auto p-8 mt-10">
       <div className="flex justify-between items-center mb-6">
         <h1 className="text-3xl font-bold">Quiz Builder Admin</h1>
         <div className="space-x-4">
@@ -123,7 +164,7 @@ export default function AdminPage() {
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8 mb-8">
         <div className="bg-white p-6 rounded-lg shadow border border-gray-200">
-          <h2 className="text-xl font-bold mb-4">Upload to Database</h2>
+          <h2 className="text-xl font-bold mb-4">Manage Database</h2>
           
           <div className="space-y-4 mb-6">
             <div>
@@ -155,12 +196,28 @@ export default function AdminPage() {
             </div>
           </div>
 
-          <input 
-            type="file" 
-            accept=".docx,.pdf"
-            onChange={e => setFile(e.target.files?.[0] || null)}
-            className="mb-4 block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded file:border-0 file:text-sm file:font-semibold file:bg-blue-50 file:text-blue-700 hover:file:bg-blue-100"
-          />
+          <div className="flex gap-4 mb-4">
+            <button
+              onClick={handleFetchExisting}
+              disabled={isProcessing}
+              className="w-1/2 py-3 rounded font-bold text-blue-700 bg-blue-50 border border-blue-200 hover:bg-blue-100 transition disabled:opacity-50"
+            >
+              Fetch Existing Quiz
+            </button>
+            <div className="w-1/2 relative">
+              <input 
+                type="file" 
+                accept=".docx,.pdf"
+                onChange={e => setFile(e.target.files?.[0] || null)}
+                className="absolute inset-0 w-full h-full opacity-0 cursor-pointer"
+              />
+              <div className={`w-full py-3 rounded font-bold text-center border transition ${
+                file ? "bg-green-50 text-green-700 border-green-200" : "bg-gray-50 text-gray-700 border-gray-200 hover:bg-gray-100"
+              }`}>
+                {file ? "File Selected ✅" : "Select File"}
+              </div>
+            </div>
+          </div>
           
           <button
             onClick={handleUpload}
@@ -169,7 +226,7 @@ export default function AdminPage() {
               file && !isProcessing ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
             }`}
           >
-            {isProcessing ? "Processing via AI (This may take up to 5 mins)..." : "Parse & Save to Database"}
+            {isProcessing ? "Processing..." : "Parse File & Save to Database"}
           </button>
 
           {successMessage && (
@@ -193,6 +250,42 @@ export default function AdminPage() {
           </ul>
         </div>
       </div>
+
+      {/* --- INSTANT PREVIEW WINDOW --- */}
+      {previewData && (
+        <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-200 animate-fade-in-up">
+          <h2 className="text-2xl font-bold mb-2">Quiz Preview</h2>
+          <p className="text-gray-500 mb-6">Review the quiz questions. The correct answer is highlighted in green.</p>
+          
+          <div className="space-y-6 max-h-[600px] overflow-y-auto p-4 border rounded-lg bg-gray-50 shadow-inner">
+            {previewData.map((q, idx) => (
+              <div key={idx} className="bg-white p-5 rounded-lg shadow-sm border border-gray-100">
+                <h3 className="text-lg font-bold text-gray-800 mb-3">
+                  <span className="text-blue-600 mr-2">{q.id}.</span> {q.question}
+                </h3>
+                
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3 text-sm">
+                  {q.options.map((opt: string, i: number) => {
+                    const isCorrect = opt === q.answer;
+                    return (
+                      <div 
+                        key={i} 
+                        className={`p-3 rounded border ${
+                          isCorrect 
+                            ? 'bg-green-50 border-green-300 text-green-900 font-bold ring-1 ring-green-300' 
+                            : 'bg-gray-50 border-gray-200 text-gray-700'
+                        }`}
+                      >
+                        {isCorrect && "✅ "} {opt}
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }
