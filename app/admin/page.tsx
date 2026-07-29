@@ -15,8 +15,8 @@ export default function AdminPage() {
   
   const [bookTitle, setBookTitle] = useState("സാമുവേൽ (Samuel)");
   const [chapterNum, setChapterNum] = useState("1");
+  const [quizId, setQuizId] = useState("1-samuel-1"); // Restored the explicit ID
   
-  // State to hold the questions for the preview window
   const [previewData, setPreviewData] = useState<any[] | null>(null);
 
   useEffect(() => {
@@ -37,22 +37,19 @@ export default function AdminPage() {
     }
   };
 
-  // Upload New Document
   const handleUpload = async () => {
-    if (!file || !bookTitle || !chapterNum) {
-      alert("Please fill in all fields and select a file.");
+    if (!file || !bookTitle || !chapterNum || !quizId) {
+      alert("Please fill in all fields (including Quiz ID) and select a file.");
       return;
     }
     
     setIsProcessing(true);
     setSuccessMessage("");
-    setPreviewData(null); // Clear previous preview
-
-    const uniqueId = Date.now().toString();
+    setPreviewData(null); 
 
     const formData = new FormData();
     formData.append("document", file);
-    formData.append("quizId", uniqueId);
+    formData.append("quizId", quizId.toLowerCase().trim().replace(/\s+/g, '-')); // Ensures clean formatting
     formData.append("book", bookTitle);
     formData.append("chapter", chapterNum);
     formData.append("adminKey", localStorage.getItem("adminKey") || "");
@@ -66,7 +63,7 @@ export default function AdminPage() {
       const data = await response.json();
       
       if (response.ok) {
-        setSuccessMessage(`✅ Successfully parsed ${data.questionCount} questions and saved to database!`);
+        setSuccessMessage(`✅ Successfully parsed ${data.questionCount} questions and saved to database under ID: ${quizId}!`);
         setFile(null);
         if (data.questions) {
           setPreviewData(data.questions);
@@ -76,13 +73,12 @@ export default function AdminPage() {
       }
     } catch (error) {
       console.error("Upload failed", error);
-      alert("Failed to connect to the server. The process may still be running in the background.");
+      alert("Failed to connect to the server.");
     } finally {
       setIsProcessing(false);
     }
   };
 
-  // Fetch Existing Document from Supabase
   const handleFetchExisting = async () => {
     if (!bookTitle || !chapterNum) {
       alert("Please enter a Book Name and Chapter to search.");
@@ -168,13 +164,13 @@ export default function AdminPage() {
           
           <div className="space-y-4 mb-6">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Book Name (Malayalam & English)</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Book Display Name (Malayalam & English)</label>
               <input 
                 type="text" 
                 value={bookTitle} 
                 onChange={e => setBookTitle(e.target.value)} 
                 className="w-full p-2 border rounded" 
-                placeholder="e.g. സാമുവേൽ (Samuel)" 
+                placeholder="e.g. 1 സാമുവേൽ (1 Samuel)" 
               />
             </div>
             
@@ -193,6 +189,19 @@ export default function AdminPage() {
                 <option value="misc" className="font-bold text-blue-600">Miscellaneous</option>
                 <option value="mock-test" className="font-bold text-purple-600">Mock Test</option>
               </select>
+            </div>
+
+            {/* RESTORED QUIZ ID FIELD */}
+            <div>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Database Quiz ID (English letters/numbers ONLY)</label>
+              <input 
+                type="text" 
+                value={quizId} 
+                onChange={e => setQuizId(e.target.value)} 
+                className="w-full p-2 border rounded bg-blue-50 text-blue-900 font-mono" 
+                placeholder="e.g. 1-samuel-2" 
+              />
+              <p className="text-xs text-gray-500 mt-1">This guarantees safe URLs and overwrites existing quizzes if the ID matches.</p>
             </div>
           </div>
 
@@ -251,7 +260,6 @@ export default function AdminPage() {
         </div>
       </div>
 
-      {/* --- INSTANT PREVIEW WINDOW --- */}
       {previewData && (
         <div className="bg-white p-6 rounded-lg shadow-lg border border-gray-200 animate-fade-in-up">
           <h2 className="text-2xl font-bold mb-2">Quiz Preview</h2>
