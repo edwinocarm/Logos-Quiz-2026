@@ -23,7 +23,6 @@ export async function POST(req: Request) {
     const adminKey = formData.get("adminKey") as string;
 
     // --- SECURITY LOCK ---
-    // If someone tries to bypass the UI and hit the API directly, this blocks them.
     if (adminKey !== "logos2026") {
       return NextResponse.json({ error: "Unauthorized. Incorrect admin password." }, { status: 401 });
     }
@@ -68,7 +67,6 @@ export async function POST(req: Request) {
     }
 
     // 2. THE CHUNKING ENGINE (MALAYALAM OPTIMIZED)
-    // We split into chunks of 2000 characters to keep it well under Groq's 6,000 TPM limit
     const lines = extractedText.split('\n');
     const chunks = [];
     let currentChunk = "";
@@ -115,14 +113,17 @@ export async function POST(req: Request) {
       3. Remove any verse references attached to the answers.
       4. For EVERY question, generate exactly 3 WRONG answers (distractors) in Malayalam using characters/places from other chapters to make it tricky.
       
-      Output strictly as a JSON object containing an array called "questions", like this:
+      Output strictly as a JSON object containing an array called "questions".
+      CRITICAL INSTRUCTION: You must use the ACTUAL extracted text for the questions and answers. Do NOT output placeholder text.
+      
+      Format like this:
       {
         "questions": [
           {
             "id": 1,
-            "question": "മലയാളത്തിലുള്ള ചോദ്യം?",
-            "answer": "ശരിയായ ഉത്തരം",
-            "options": ["ശരിയായ ഉത്തരം", "തെറ്റായ ഉത്തരം 1", "തെറ്റായ ഉത്തരം 2", "തെറ്റായ ഉത്തരം 3"] 
+            "question": "<Insert Actual Malayalam Question Here>",
+            "answer": "<Insert Actual Correct Malayalam Answer Here>",
+            "options": ["<Correct Answer>", "<Tricky Wrong Answer 1>", "<Tricky Wrong Answer 2>", "<Tricky Wrong Answer 3>"] 
           }
         ]
       }
@@ -135,9 +136,7 @@ export async function POST(req: Request) {
 
       let chunkSuccess = false;
 
-      // ==============================================
       // ATTEMPT 1: GEMINI 3.6
-      // ==============================================
       try {
         const result = await model.generateContent(prompt);
         const responseText = result.response.text();
@@ -152,9 +151,7 @@ export async function POST(req: Request) {
         console.warn(`Gemini failed on chunk ${i + 1}: ${geminiError.message}. Switching to GROQ...`);
       }
 
-      // ==============================================
-      // ATTEMPT 2: GROQ (If Gemini failed this specific chunk)
-      // ==============================================
+      // ATTEMPT 2: GROQ
       if (!chunkSuccess) {
         try {
           const response = await groq.chat.completions.create({
