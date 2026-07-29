@@ -1,9 +1,9 @@
 import { NextResponse } from "next/server";
 import mammoth from "mammoth";
 import { supabase } from "@/lib/supabase";
-import { GoogleGenerativeAI } from "@google/generative-ai";
+import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
-// Force Vercel to allow this API route to run for up to 5 minutes to prevent timeouts
+// Keeps the Vercel server alive for up to 5 minutes to prevent timeouts
 export const maxDuration = 300; 
 
 function shuffleArray(array: any[]) {
@@ -67,7 +67,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Could not extract text from document." }, { status: 400 });
     }
 
-    // 2. THE CHUNKING ENGINE (5000 characters to prevent cut-off sentences)
+    // 2. THE CHUNKING ENGINE (5000 characters)
     const lines = extractedText.split('\n');
     const chunks = [];
     let currentChunk = "";
@@ -86,16 +86,26 @@ export async function POST(req: Request) {
 
     console.log(`Document split into ${chunks.length} safe chunks.`);
 
-    // 3. INITIALIZE GEMINI AI
+    // 3. INITIALIZE GEMINI AI (With Safety Filters DISABLED)
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ 
         model: "gemini-3.6-flash", 
-        generationConfig: { responseMimeType: "application/json", maxOutputTokens: 8192 }
+        // Note: Temperature, top_p, and top_k are deprecated for 3.6 Flash and omitted here
+        generationConfig: { 
+            responseMimeType: "application/json", 
+            maxOutputTokens: 8192 
+        },
+        safetySettings: [
+            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_NONE },
+            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_NONE },
+        ]
     });
 
     let allQuestions: any[] = [];
 
-    // 4. PROCESS EACH CHUNK SEQUENTIALLY WITH RETRIES
+    // 4. PROCESS EACH CHUNK SEQUENTIALLY
     for (let i = 0; i < chunks.length; i++) {
       console.log(`Processing chunk ${i + 1} of ${chunks.length}...`);
       
@@ -132,13 +142,11 @@ export async function POST(req: Request) {
       let chunkSuccess = false;
       let retries = 0;
 
-      // ATTEMPT GEMINI WITH AUTO-RETRY
       while (!chunkSuccess && retries < 3) {
         try {
           const result = await model.generateContent(prompt);
           let responseText = result.response.text();
           
-          // Clean up potential markdown blocks the AI might output
           responseText = responseText.replace(/```json/g, '').replace(/```/g, '');
           const parsedData = JSON.parse(responseText);
           
@@ -150,16 +158,13 @@ export async function POST(req: Request) {
         } catch (error: any) {
           retries++;
           console.warn(`Gemini failed on chunk ${i + 1} (Attempt ${retries}): ${error.message}. Retrying in 4 seconds...`);
-          await new Promise(resolve => setTimeout(resolve, 4000)); // Wait 4 seconds before retry
+          await new Promise(resolve => setTimeout(resolve, 4000));
         }
       }
 
       if (!chunkSuccess) {
         console.error(`FAILED to parse chunk ${i + 1} after 3 attempts. Skipping this chunk.`);
       }
-
-      // Pause for 3.5 seconds to respect Gemini API limits before moving to the next chunk
-      await new Promise(resolve => setTimeout(resolve, 3500));
     }
 
     // 5. FINAL VALIDATION
@@ -170,7 +175,7 @@ export async function POST(req: Request) {
     // 6. SHUFFLE & RE-ID
     const enhancedQuestions = allQuestions.map((q: any, index: number) => ({
       ...q,
-      id: index + 1, // Ensure clean, sequential IDs
+      id: index + 1, 
       options: shuffleArray(q.options) 
     }));
 
@@ -189,7 +194,6 @@ export async function POST(req: Request) {
 
     console.log(`SUCCESS: Total of ${enhancedQuestions.length} questions saved to database!`);
     
-    // Return the questions so the Admin Preview Board can display them immediately
     return NextResponse.json({ success: true, questionCount: enhancedQuestions.length, questions: enhancedQuestions });
     
   } catch (error: any) {
