@@ -2,7 +2,9 @@ import { NextResponse } from "next/server";
 import mammoth from "mammoth";
 import { supabase } from "@/lib/supabase";
 import { GoogleGenerativeAI } from "@google/generative-ai";
-import OpenAI from "openai"; 
+
+// Force Vercel to allow this API route to run for up to 5 minutes to prevent timeouts
+export const maxDuration = 300; 
 
 function shuffleArray(array: any[]) {
   const shuffled = [...array];
@@ -22,7 +24,6 @@ export async function POST(req: Request) {
     const chapter = formData.get("chapter") as string;
     const adminKey = formData.get("adminKey") as string;
 
-    // --- SECURITY LOCK ---
     if (adminKey !== "logos2026") {
       return NextResponse.json({ error: "Unauthorized. Incorrect admin password." }, { status: 401 });
     }
@@ -31,8 +32,8 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY || !process.env.GROQ_API_KEY) {
-      return NextResponse.json({ error: "Missing API Keys in .env.local" }, { status: 500 });
+    if (!process.env.GEMINI_API_KEY) {
+      return NextResponse.json({ error: "Missing GEMINI_API_KEY in .env.local" }, { status: 500 });
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -66,13 +67,13 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Could not extract text from document." }, { status: 400 });
     }
 
-    // 2. THE CHUNKING ENGINE (MALAYALAM OPTIMIZED)
+    // 2. THE CHUNKING ENGINE (5000 characters to prevent cut-off sentences)
     const lines = extractedText.split('\n');
     const chunks = [];
     let currentChunk = "";
 
     for (const line of lines) {
-      if (currentChunk.length + line.length > 2000) {
+      if (currentChunk.length + line.length > 5000) {
         chunks.push(currentChunk);
         currentChunk = line + '\n';
       } else {
@@ -83,23 +84,18 @@ export async function POST(req: Request) {
       chunks.push(currentChunk);
     }
 
-    console.log(`Document split into ${chunks.length} safe, lightweight chunks.`);
+    console.log(`Document split into ${chunks.length} safe chunks.`);
 
-    // 3. INITIALIZE BOTH AI ENGINES
+    // 3. INITIALIZE GEMINI AI
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ 
         model: "gemini-3.6-flash", 
         generationConfig: { responseMimeType: "application/json", maxOutputTokens: 8192 }
     });
-    
-    const groq = new OpenAI({ 
-        apiKey: process.env.GROQ_API_KEY,
-        baseURL: "https://api.groq.com/openai/v1" 
-    });
 
     let allQuestions: any[] = [];
 
-    // 4. PROCESS EACH CHUNK SEQUENTIALLY
+    // 4. PROCESS EACH CHUNK SEQUENTIALLY WITH RETRIES
     for (let i = 0; i < chunks.length; i++) {
       console.log(`Processing chunk ${i + 1} of ${chunks.length}...`);
       
@@ -108,21 +104,20 @@ export async function POST(req: Request) {
       I am providing you with PART ${i + 1} of an extracted Malayalam text from a Bible quiz document for the book of ${book}, Chapter ${chapter}.
       
       Your task:
-      1. Extract all the questions and correct answers from THIS CHUNK of text.
-      2. Fix any Malayalam OCR spelling errors.
-      3. Remove any verse references attached to the answers.
-      4. For EVERY question, generate exactly 3 WRONG answers (distractors) in Malayalam using characters/places from other chapters to make it tricky.
+      1. Extract all the valid questions and correct answers from THIS CHUNK of text.
+      2. Remove any verse references attached to the answers.
+      3. For EVERY question, generate exactly 3 WRONG answers (distractors) in Malayalam.
+      4. CRITICAL: If a sentence or question is cut off at the beginning or end of this text, DO NOT try to guess it. SKIP IT entirely. NEVER output random or gibberish Malayalam letters. Only output fully readable, real Malayalam questions.
       
-      Output strictly as a JSON object containing an array called "questions".
-      CRITICAL INSTRUCTION: You must use the ACTUAL extracted text for the questions and answers. Do NOT output placeholder text.
+      Output strictly as a JSON object containing an array called "questions". Use the ACTUAL extracted text for questions and answers.
       
       Format like this:
       {
         "questions": [
           {
             "id": 1,
-            "question": "<Insert Actual Malayalam Question Here>",
-            "answer": "<Insert Actual Correct Malayalam Answer Here>",
+            "question": "<Actual Malayalam Question>",
+            "answer": "<Actual Correct Malayalam Answer>",
             "options": ["<Correct Answer>", "<Tricky Wrong Answer 1>", "<Tricky Wrong Answer 2>", "<Tricky Wrong Answer 3>"] 
           }
         ]
@@ -135,58 +130,47 @@ export async function POST(req: Request) {
       `;
 
       let chunkSuccess = false;
+      let retries = 0;
 
-      // ATTEMPT 1: GEMINI 3.6
-      try {
-        const result = await model.generateContent(prompt);
-        const responseText = result.response.text();
-        const parsedData = JSON.parse(responseText);
-        
-        if (parsedData.questions && Array.isArray(parsedData.questions)) {
-          allQuestions = allQuestions.concat(parsedData.questions);
-          console.log(`Chunk ${i + 1} parsed by GEMINI. Added ${parsedData.questions.length} questions.`);
-          chunkSuccess = true;
-        }
-      } catch (geminiError: any) {
-        console.warn(`Gemini failed on chunk ${i + 1}: ${geminiError.message}. Switching to GROQ...`);
-      }
-
-      // ATTEMPT 2: GROQ
-      if (!chunkSuccess) {
+      // ATTEMPT GEMINI WITH AUTO-RETRY
+      while (!chunkSuccess && retries < 3) {
         try {
-          const response = await groq.chat.completions.create({
-            model: "llama-3.1-8b-instant", 
-            response_format: { type: "json_object" }, 
-            messages: [
-              { role: "system", content: prompt }
-            ],
-          });
-
-          const responseText = response.choices[0].message.content || "{}";
+          const result = await model.generateContent(prompt);
+          let responseText = result.response.text();
+          
+          // Clean up potential markdown blocks the AI might output
+          responseText = responseText.replace(/```json/g, '').replace(/```/g, '');
           const parsedData = JSON.parse(responseText);
-
+          
           if (parsedData.questions && Array.isArray(parsedData.questions)) {
             allQuestions = allQuestions.concat(parsedData.questions);
-            console.log(`Chunk ${i + 1} parsed by GROQ. Added ${parsedData.questions.length} questions.`);
+            console.log(`Chunk ${i + 1} parsed successfully on attempt ${retries + 1}. Added ${parsedData.questions.length} questions.`);
+            chunkSuccess = true;
           }
-        } catch (groqError: any) {
-          console.error(`BOTH engines failed on chunk ${i + 1}. Error: ${groqError.message}`);
+        } catch (error: any) {
+          retries++;
+          console.warn(`Gemini failed on chunk ${i + 1} (Attempt ${retries}): ${error.message}. Retrying in 4 seconds...`);
+          await new Promise(resolve => setTimeout(resolve, 4000)); // Wait 4 seconds before retry
         }
       }
 
-      // Pause for 3.5 seconds to cool down API limits before the next chunk
+      if (!chunkSuccess) {
+        console.error(`FAILED to parse chunk ${i + 1} after 3 attempts. Skipping this chunk.`);
+      }
+
+      // Pause for 3.5 seconds to respect Gemini API limits before moving to the next chunk
       await new Promise(resolve => setTimeout(resolve, 3500));
     }
 
     // 5. FINAL VALIDATION
     if (allQuestions.length === 0) {
-      return NextResponse.json({ error: "Both AIs failed to extract valid questions from the document." }, { status: 500 });
+      return NextResponse.json({ error: "AI failed to extract any valid questions from the document." }, { status: 500 });
     }
 
     // 6. SHUFFLE & RE-ID
     const enhancedQuestions = allQuestions.map((q: any, index: number) => ({
       ...q,
-      id: index + 1, // Ensure clean, sequential IDs from 1 to 100+
+      id: index + 1, // Ensure clean, sequential IDs
       options: shuffleArray(q.options) 
     }));
 
@@ -204,7 +188,9 @@ export async function POST(req: Request) {
     if (dbError) return NextResponse.json({ error: "Database error: " + dbError.message }, { status: 500 });
 
     console.log(`SUCCESS: Total of ${enhancedQuestions.length} questions saved to database!`);
-    return NextResponse.json({ success: true, questionCount: enhancedQuestions.length });
+    
+    // Return the questions so the Admin Preview Board can display them immediately
+    return NextResponse.json({ success: true, questionCount: enhancedQuestions.length, questions: enhancedQuestions });
     
   } catch (error: any) {
     console.error("Master Parser Error:", error.message || error);
