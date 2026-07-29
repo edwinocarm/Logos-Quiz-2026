@@ -16,7 +16,6 @@ export default function AdminPage() {
   const [chapterNum, setChapterNum] = useState("1");
   const [quizId, setQuizId] = useState("1-samuel-1"); 
   
-  // New state for the merge toggle
   const [appendMode, setAppendMode] = useState(false);
   
   const [previewData, setPreviewData] = useState<any[] | null>(null);
@@ -54,7 +53,6 @@ export default function AdminPage() {
     formData.append("quizId", quizId.toLowerCase().trim().replace(/\s+/g, '-')); 
     formData.append("book", bookTitle);
     formData.append("chapter", chapterNum);
-    // Send the append flag to the backend
     formData.append("append", appendMode.toString()); 
     formData.append("adminKey", localStorage.getItem("adminKey") || "");
 
