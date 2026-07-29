@@ -5,7 +5,6 @@ import { useState, useEffect } from "react";
 export default function AdminPage() {
   const [isMounted, setIsMounted] = useState(false);
   
-  // Auth state
   const [isAuthenticated, setIsAuthenticated] = useState(false);
   const [passwordInput, setPasswordInput] = useState("");
 
@@ -15,7 +14,10 @@ export default function AdminPage() {
   
   const [bookTitle, setBookTitle] = useState("സാമുവേൽ (Samuel)");
   const [chapterNum, setChapterNum] = useState("1");
-  const [quizId, setQuizId] = useState("1-samuel-1"); // Restored the explicit ID
+  const [quizId, setQuizId] = useState("1-samuel-1"); 
+  
+  // New state for the merge toggle
+  const [appendMode, setAppendMode] = useState(false);
   
   const [previewData, setPreviewData] = useState<any[] | null>(null);
 
@@ -39,7 +41,7 @@ export default function AdminPage() {
 
   const handleUpload = async () => {
     if (!file || !bookTitle || !chapterNum || !quizId) {
-      alert("Please fill in all fields (including Quiz ID) and select a file.");
+      alert("Please fill in all fields and select a file.");
       return;
     }
     
@@ -49,9 +51,11 @@ export default function AdminPage() {
 
     const formData = new FormData();
     formData.append("document", file);
-    formData.append("quizId", quizId.toLowerCase().trim().replace(/\s+/g, '-')); // Ensures clean formatting
+    formData.append("quizId", quizId.toLowerCase().trim().replace(/\s+/g, '-')); 
     formData.append("book", bookTitle);
     formData.append("chapter", chapterNum);
+    // Send the append flag to the backend
+    formData.append("append", appendMode.toString()); 
     formData.append("adminKey", localStorage.getItem("adminKey") || "");
 
     try {
@@ -63,13 +67,13 @@ export default function AdminPage() {
       const data = await response.json();
       
       if (response.ok) {
-        setSuccessMessage(`✅ Successfully parsed ${data.questionCount} questions and saved to database under ID: ${quizId}!`);
+        setSuccessMessage(`✅ ${data.message}`);
         setFile(null);
         if (data.questions) {
           setPreviewData(data.questions);
         }
       } else {
-        alert("Error parsing document: " + data.error);
+        alert("Error: " + data.error);
       }
     } catch (error) {
       console.error("Upload failed", error);
@@ -110,7 +114,7 @@ export default function AdminPage() {
       }
     } catch (error) {
       console.error("Fetch failed", error);
-      alert("Failed to fetch the quiz from the server.");
+      alert("Failed to fetch the quiz.");
     } finally {
       setIsProcessing(false);
     }
@@ -164,13 +168,12 @@ export default function AdminPage() {
           
           <div className="space-y-4 mb-6">
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Book Display Name (Malayalam & English)</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Book Display Name</label>
               <input 
                 type="text" 
                 value={bookTitle} 
                 onChange={e => setBookTitle(e.target.value)} 
                 className="w-full p-2 border rounded" 
-                placeholder="e.g. 1 സാമുവേൽ (1 Samuel)" 
               />
             </div>
             
@@ -185,23 +188,17 @@ export default function AdminPage() {
                 {chapterNumbers.map(num => (
                   <option key={num} value={num.toString()}>Chapter {num}</option>
                 ))}
-                <option value="similar-verses" className="font-bold text-blue-600">Similar Verses</option>
-                <option value="misc" className="font-bold text-blue-600">Miscellaneous</option>
-                <option value="mock-test" className="font-bold text-purple-600">Mock Test</option>
               </select>
             </div>
 
-            {/* RESTORED QUIZ ID FIELD */}
             <div>
-              <label className="block text-sm font-bold text-gray-700 mb-1">Database Quiz ID (English letters/numbers ONLY)</label>
+              <label className="block text-sm font-bold text-gray-700 mb-1">Database Quiz ID</label>
               <input 
                 type="text" 
                 value={quizId} 
                 onChange={e => setQuizId(e.target.value)} 
                 className="w-full p-2 border rounded bg-blue-50 text-blue-900 font-mono" 
-                placeholder="e.g. 1-samuel-2" 
               />
-              <p className="text-xs text-gray-500 mt-1">This guarantees safe URLs and overwrites existing quizzes if the ID matches.</p>
             </div>
           </div>
 
@@ -228,6 +225,26 @@ export default function AdminPage() {
             </div>
           </div>
           
+          {/* MERGE VS OVERWRITE TOGGLE */}
+          <div className="mb-4 p-4 border rounded-lg bg-gray-50">
+            <label className="flex items-center space-x-3 cursor-pointer">
+              <input 
+                type="checkbox" 
+                checked={appendMode}
+                onChange={(e) => setAppendMode(e.target.checked)}
+                className="w-5 h-5 text-blue-600 rounded border-gray-300 focus:ring-blue-500"
+              />
+              <span className="font-bold text-gray-800">
+                {appendMode ? "➕ Append to Existing Quiz (Merge Mode)" : "⚠️ Overwrite Existing Quiz (Wipe Mode)"}
+              </span>
+            </label>
+            <p className="text-xs text-gray-500 mt-2 ml-8">
+              {appendMode 
+                ? "Checking this will add the new file's questions to the end of the existing database quiz." 
+                : "Leaving this unchecked will permanently delete the old quiz and replace it with the new file."}
+            </p>
+          </div>
+
           <button
             onClick={handleUpload}
             disabled={!file || isProcessing}
@@ -235,7 +252,7 @@ export default function AdminPage() {
               file && !isProcessing ? "bg-blue-600 hover:bg-blue-700" : "bg-gray-400 cursor-not-allowed"
             }`}
           >
-            {isProcessing ? "Processing..." : "Parse File & Save to Database"}
+            {isProcessing ? "Processing..." : (appendMode ? "Parse File & Merge Data" : "Parse File & Overwrite Data")}
           </button>
 
           {successMessage && (
@@ -243,20 +260,6 @@ export default function AdminPage() {
               {successMessage}
             </div>
           )}
-        </div>
-
-        <div className="bg-blue-50 p-6 rounded-lg border border-blue-100 text-blue-900">
-          <h2 className="text-lg font-bold mb-2">📝 Document Guide</h2>
-          <div className="bg-white p-3 rounded border border-blue-200 font-mono text-sm mb-4 shadow-sm">
-            1. റൂത്ത് അധ്യായം ഒന്നിൽ എത്ര വാക്യങ്ങൾ ഉണ്ട്?<br/>
-            ഉത്തരം: 22 വാക്യങ്ങൾ, 22, ഇരുപത്തിരണ്ട്
-          </div>
-          <ul className="text-sm list-disc pl-4 space-y-1">
-            <li>Supports both <strong>.docx (Word)</strong> and <strong>.pdf</strong></li>
-            <li>Questions <strong>must</strong> start with a number (1. , 2. )</li>
-            <li>Answers <strong>must</strong> start with "ഉത്തരം:"</li>
-            <li>Separate multiple answers with a <strong>comma</strong></li>
-          </ul>
         </div>
       </div>
 

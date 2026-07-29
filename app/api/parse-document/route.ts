@@ -3,7 +3,6 @@ import mammoth from "mammoth";
 import { supabase } from "@/lib/supabase";
 import { GoogleGenerativeAI, HarmCategory, HarmBlockThreshold } from "@google/generative-ai";
 
-// Keeps the Vercel server alive for up to 5 minutes to prevent timeouts
 export const maxDuration = 300; 
 
 function shuffleArray(array: any[]) {
@@ -23,6 +22,8 @@ export async function POST(req: Request) {
     const book = formData.get("book") as string;
     const chapter = formData.get("chapter") as string;
     const adminKey = formData.get("adminKey") as string;
+    // New flag to determine if we are merging or overwriting
+    const appendMode = formData.get("append") === "true"; 
 
     if (adminKey !== "logos2026") {
       return NextResponse.json({ error: "Unauthorized. Incorrect admin password." }, { status: 401 });
@@ -84,13 +85,10 @@ export async function POST(req: Request) {
       chunks.push(currentChunk);
     }
 
-    console.log(`Document split into ${chunks.length} safe chunks.`);
-
-    // 3. INITIALIZE GEMINI AI (With Safety Filters Lowered to Minimum Allowed)
+    // 3. INITIALIZE GEMINI AI
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-3.6-flash", 
-        // Note: Temperature, top_p, and top_k are deprecated for 3.6 Flash and omitted here
+        model: "gemini-1.5-flash", 
         generationConfig: { 
             responseMimeType: "application/json", 
             maxOutputTokens: 8192 
@@ -103,12 +101,10 @@ export async function POST(req: Request) {
         ]
     });
 
-    let allQuestions: any[] = [];
+    let newQuestions: any[] = [];
 
-    // 4. PROCESS EACH CHUNK SEQUENTIALLY
+    // 4. PROCESS EACH CHUNK
     for (let i = 0; i < chunks.length; i++) {
-      console.log(`Processing chunk ${i + 1} of ${chunks.length}...`);
-      
       const prompt = `
       You are an elite, strict examiner for the Kerala Catholic Bible Society "Logos Quiz". 
       I am providing you with PART ${i + 1} of an extracted Malayalam text from a Bible quiz document for the book of ${book}, Chapter ${chapter}.
@@ -151,35 +147,54 @@ export async function POST(req: Request) {
           const parsedData = JSON.parse(responseText);
           
           if (parsedData.questions && Array.isArray(parsedData.questions)) {
-            allQuestions = allQuestions.concat(parsedData.questions);
-            console.log(`Chunk ${i + 1} parsed successfully on attempt ${retries + 1}. Added ${parsedData.questions.length} questions.`);
+            newQuestions = newQuestions.concat(parsedData.questions);
             chunkSuccess = true;
           }
         } catch (error: any) {
           retries++;
-          console.warn(`Gemini failed on chunk ${i + 1} (Attempt ${retries}): ${error.message}. Retrying in 4 seconds...`);
           await new Promise(resolve => setTimeout(resolve, 4000));
         }
       }
-
-      if (!chunkSuccess) {
-        console.error(`FAILED to parse chunk ${i + 1} after 3 attempts. Skipping this chunk.`);
-      }
     }
 
-    // 5. FINAL VALIDATION
-    if (allQuestions.length === 0) {
+    if (newQuestions.length === 0) {
       return NextResponse.json({ error: "AI failed to extract any valid questions from the document." }, { status: 500 });
     }
 
-    // 6. SHUFFLE & RE-ID
-    const enhancedQuestions = allQuestions.map((q: any, index: number) => ({
+    // 5. FETCH EXISTING DATA IF IN APPEND MODE
+    let finalQuestions = [];
+
+    if (appendMode) {
+        // Look up the existing quiz
+        const { data: existingData, error: fetchError } = await supabase
+            .from('chapters')
+            .select('questions')
+            .eq('id', quizId)
+            .limit(1)
+            .single();
+
+        if (!fetchError && existingData && existingData.questions) {
+            console.log(`Found ${existingData.questions.length} existing questions. Merging...`);
+            // Combine old questions with the new ones
+            finalQuestions = [...existingData.questions, ...newQuestions];
+        } else {
+            console.log("No existing quiz found to append to. Starting fresh.");
+            finalQuestions = newQuestions;
+        }
+    } else {
+        // If not appending, just use the newly extracted questions (Overwrite mode)
+        finalQuestions = newQuestions;
+    }
+
+    // 6. SHUFFLE & RE-ID EVERY QUESTION SEQUENTIALLY
+    // We re-ID the entire combined list so the numbers flow perfectly from 1 to 150
+    const enhancedQuestions = finalQuestions.map((q: any, index: number) => ({
       ...q,
       id: index + 1, 
       options: shuffleArray(q.options) 
     }));
 
-    // 7. PUSH TO SUPABASE
+    // 7. PUSH COMBINED LIST TO SUPABASE
     const { error: dbError } = await supabase
       .from('chapters')
       .upsert({
@@ -191,10 +206,13 @@ export async function POST(req: Request) {
       });
 
     if (dbError) return NextResponse.json({ error: "Database error: " + dbError.message }, { status: 500 });
-
-    console.log(`SUCCESS: Total of ${enhancedQuestions.length} questions saved to database!`);
     
-    return NextResponse.json({ success: true, questionCount: enhancedQuestions.length, questions: enhancedQuestions });
+    return NextResponse.json({ 
+        success: true, 
+        questionCount: enhancedQuestions.length, 
+        questions: enhancedQuestions,
+        message: appendMode ? `Successfully appended. Total questions: ${enhancedQuestions.length}` : `Successfully overwritten. Total questions: ${enhancedQuestions.length}`
+    });
     
   } catch (error: any) {
     console.error("Master Parser Error:", error.message || error);
