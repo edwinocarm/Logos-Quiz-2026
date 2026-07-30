@@ -24,7 +24,6 @@ export async function POST(req: Request) {
     const chapter = formData.get("chapter") as string;
     const adminKey = formData.get("adminKey") as string;
     
-    // New flag to determine if we are merging or overwriting
     const appendMode = formData.get("append") === "true"; 
 
     if (adminKey !== "logos2026") {
@@ -35,8 +34,15 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Missing required fields" }, { status: 400 });
     }
 
-    if (!process.env.GEMINI_API_KEY) {
-      return NextResponse.json({ error: "Missing GEMINI_API_KEY in .env.local" }, { status: 500 });
+    // LOAD ALL AVAILABLE API KEYS INTO AN ARRAY
+    const apiKeys = [
+      process.env.GEMINI_API_KEY,
+      process.env.GEMINI_API_KEY_2,
+      process.env.GEMINI_API_KEY_3 // Added for future-proofing
+    ].filter(Boolean) as string[]; // Remove any undefined keys
+
+    if (apiKeys.length === 0) {
+      return NextResponse.json({ error: "Missing Gemini API keys in .env.local" }, { status: 500 });
     }
 
     const arrayBuffer = await file.arrayBuffer();
@@ -70,7 +76,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: "Could not extract text from document." }, { status: 400 });
     }
 
-    // 2. THE CHUNKING ENGINE (2500 characters max to prevent token overflow)
+    // 2. THE CHUNKING ENGINE
     const lines = extractedText.split('\n');
     const chunks = [];
     let currentChunk = "";
@@ -87,29 +93,14 @@ export async function POST(req: Request) {
       chunks.push(currentChunk);
     }
 
-    console.log(`Document split into ${chunks.length} safe chunks.`);
-
-    // 3. INITIALIZE GEMINI AI
-    const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
-    const model = genAI.getGenerativeModel({ 
-        model: "gemini-1.5-flash", 
-        generationConfig: { 
-            responseMimeType: "application/json", 
-            maxOutputTokens: 8192 // The absolute true maximum Google allows
-        },
-        safetySettings: [
-            { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-            { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
-        ]
-    });
+    console.log(`Document split into ${chunks.length} safe chunks. Detected ${apiKeys.length} API Keys.`);
 
     let newQuestions: any[] = [];
+    let currentKeyIndex = 0; // Starts with the first API key
 
     // 4. PROCESS EACH CHUNK SEQUENTIALLY
     for (let i = 0; i < chunks.length; i++) {
-      console.log(`Processing chunk ${i + 1} of ${chunks.length}...`);
+      console.log(`Processing chunk ${i + 1} of ${chunks.length} using API Key ${currentKeyIndex + 1}...`);
       
       const prompt = `
       You are an elite, strict examiner for the Kerala Catholic Bible Society "Logos Quiz". 
@@ -119,6 +110,8 @@ export async function POST(req: Request) {
       1. Extract all the valid questions and correct answers from THIS CHUNK of text.
       2. Remove any verse references attached to the answers.
       3. For EVERY question, generate exactly 3 WRONG answers (distractors) in Malayalam.
+      
+      CRITICAL INSTRUCTION: You MUST extract the questions. Do NOT return an empty array unless the chunk is completely blank.
       
       Output strictly as a JSON object containing an array called "questions". Use the ACTUAL extracted text for questions and answers.
       
@@ -145,6 +138,19 @@ export async function POST(req: Request) {
 
       while (!chunkSuccess && retries < 3) {
         try {
+          // Initialize AI with whichever key is currently active
+          const genAI = new GoogleGenerativeAI(apiKeys[currentKeyIndex]);
+          const model = genAI.getGenerativeModel({ 
+              model: "gemini-3.6-flash", 
+              generationConfig: { responseMimeType: "application/json", maxOutputTokens: 65536 },
+              safetySettings: [
+                  { category: HarmCategory.HARM_CATEGORY_HARASSMENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                  { category: HarmCategory.HARM_CATEGORY_HATE_SPEECH, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                  { category: HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+                  { category: HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT, threshold: HarmBlockThreshold.BLOCK_ONLY_HIGH },
+              ]
+          });
+
           const result = await model.generateContent(prompt);
           let responseText = result.response.text();
           
@@ -152,11 +158,30 @@ export async function POST(req: Request) {
           const parsedData = JSON.parse(responseText);
           
           if (parsedData.questions && Array.isArray(parsedData.questions)) {
-            newQuestions = newQuestions.concat(parsedData.questions);
-            console.log(`Chunk ${i + 1} parsed successfully on attempt ${retries + 1}. Added ${parsedData.questions.length} questions.`);
-            chunkSuccess = true;
+            if (parsedData.questions.length > 0) {
+                newQuestions = newQuestions.concat(parsedData.questions);
+                console.log(`Chunk ${i + 1} parsed successfully. Added ${parsedData.questions.length} questions.`);
+                chunkSuccess = true;
+            } else {
+                throw new Error("AI was lazy and returned 0 questions for this chunk. Forcing retry.");
+            }
+          } else {
+              throw new Error("AI returned malformed JSON structure.");
           }
         } catch (error: any) {
+          const errMsg = error.message || "";
+          
+          // THE ROTATION LOGIC: Check if error is a Rate Limit (429) or Quota Exceeded
+          if (errMsg.includes("429") || errMsg.includes("Quota exceeded")) {
+             if (currentKeyIndex < apiKeys.length - 1) {
+                console.warn(`Key ${currentKeyIndex + 1} hit rate limit. Switching to Backup API Key ${currentKeyIndex + 2}...`);
+                currentKeyIndex++; // Swap to the next key
+                continue; // Instantly restart the try-block without adding to the 'retries' count
+             } else {
+                console.error("All available API keys have hit their rate limits.");
+             }
+          }
+
           retries++;
           console.warn(`Gemini failed on chunk ${i + 1} (Attempt ${retries}): ${error.message}. Retrying in 4 seconds...`);
           await new Promise(resolve => setTimeout(resolve, 4000));
@@ -166,6 +191,8 @@ export async function POST(req: Request) {
       if (!chunkSuccess) {
         console.error(`FAILED to parse chunk ${i + 1} after 3 attempts. Skipping this chunk.`);
       }
+      
+      if (i < chunks.length - 1) await new Promise(resolve => setTimeout(resolve, 2000));
     }
 
     if (newQuestions.length === 0) {
@@ -189,7 +216,6 @@ export async function POST(req: Request) {
             console.log(`Found ${existingData.questions.length} existing questions. Merging...`);
             finalQuestions = [...existingData.questions, ...newQuestions];
         } else {
-            console.log("No existing quiz found to append to. Starting fresh.");
             finalQuestions = newQuestions;
         }
     } else {
@@ -216,8 +242,6 @@ export async function POST(req: Request) {
 
     if (dbError) return NextResponse.json({ error: "Database error: " + dbError.message }, { status: 500 });
     
-    console.log(`SUCCESS: Total of ${enhancedQuestions.length} questions saved to database!`);
-
     return NextResponse.json({ 
         success: true, 
         questionCount: enhancedQuestions.length, 
