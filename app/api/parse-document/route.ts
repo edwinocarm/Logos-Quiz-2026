@@ -92,7 +92,7 @@ export async function POST(req: Request) {
     // 3. INITIALIZE GEMINI AI
     const genAI = new GoogleGenerativeAI(process.env.GEMINI_API_KEY);
     const model = genAI.getGenerativeModel({ 
-        model: "gemini-3.6-flash", 
+        model: "gemini-1.5-flash", 
         generationConfig: { 
             responseMimeType: "application/json", 
             maxOutputTokens: 8192 // The absolute true maximum Google allows
@@ -119,7 +119,6 @@ export async function POST(req: Request) {
       1. Extract all the valid questions and correct answers from THIS CHUNK of text.
       2. Remove any verse references attached to the answers.
       3. For EVERY question, generate exactly 3 WRONG answers (distractors) in Malayalam.
-      4. CRITICAL: If a sentence or question is cut off at the beginning or end of this text, DO NOT try to guess it. SKIP IT entirely. NEVER output random or gibberish Malayalam letters. Only output fully readable, real Malayalam questions.
       
       Output strictly as a JSON object containing an array called "questions". Use the ACTUAL extracted text for questions and answers.
       
@@ -170,7 +169,9 @@ export async function POST(req: Request) {
     }
 
     if (newQuestions.length === 0) {
-      return NextResponse.json({ error: "AI failed to extract any valid questions from the document." }, { status: 500 });
+      return NextResponse.json({ 
+        error: "AI found zero valid questions. If you uploaded a PDF, the Malayalam text likely extracted as unreadable gibberish due to font encoding. Please copy the text into a Word (.docx) file and try again." 
+      }, { status: 400 });
     }
 
     // 5. FETCH EXISTING DATA IF IN APPEND MODE
