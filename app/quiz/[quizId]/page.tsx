@@ -17,6 +17,17 @@ interface ExtendedQuizQuestion extends QuizQuestion {
   options?: string[];
 }
 
+// 1. --- ADDED SHUFFLE FUNCTION ---
+// Perfectly randomizes the array of questions
+function shuffleArray(array: any[]) {
+  const shuffled = [...array];
+  for (let i = shuffled.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [shuffled[i], shuffled[j]] = [shuffled[j], shuffled[i]];
+  }
+  return shuffled;
+}
+
 export default function QuizPage() {
   const params = useParams();
   const quizId = (params.id || params.quizId) as string; 
@@ -44,7 +55,14 @@ export default function QuizPage() {
         .eq('id', quizId)
         .single();
         
-      if (data) setCurrentQuiz(data);
+      if (data) {
+        // 2. --- THE MAGIC SHUFFLE ---
+        // Before setting the quiz to state, we shuffle the questions array!
+        if (data.questions && Array.isArray(data.questions)) {
+          data.questions = shuffleArray(data.questions);
+        }
+        setCurrentQuiz(data);
+      }
       setIsLoading(false);
     }
     loadQuiz();
