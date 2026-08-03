@@ -102,9 +102,9 @@ export async function POST(req: Request) {
     for (let i = 0; i < chunks.length; i++) {
       console.log(`Processing chunk ${i + 1} of ${chunks.length} using API Key ${currentKeyIndex + 1}...`);
       
-      // --- THE NEW HIGH-DIFFICULTY PROMPT ---
+      // --- THE NEW MASTER-DECEPTION PROMPT ---
       const prompt = `
-      You are an elite, strict examiner for the Kerala Catholic Bible Society "Logos Quiz". 
+      You are an elite, cunning, and strict examiner for the Kerala Catholic Bible Society "Logos Quiz". 
       I am providing you with PART ${i + 1} of an extracted Malayalam text from a Bible quiz document for the book of ${book}, Chapter ${chapter}.
       
       Your task:
@@ -112,16 +112,22 @@ export async function POST(req: Request) {
       2. Remove any verse references attached to the answers.
       3. For EVERY question, generate exactly 3 WRONG answers (distractors) in Malayalam.
       
-      CRITICAL INSTRUCTION FOR DISTRACTORS:
-      The distractors must be EXTREMELY difficult, nuanced, and highly confusing. They must look like they could be the correct Bible text. 
-      Do NOT use obvious wrong answers. Use slight variations, overlapping words, and synonyms of the correct answer. 
+      CRITICAL RULES FOR GENERATING OPTIONS:
+      You must be highly deceptive. DO NOT use the same trick for every question. The test-taker must never be able to detect a meta-pattern. Randomly apply different psychological traps from the list below:
       
-      EXAMPLE OF WHAT I WANT:
-      If the question is "അവർ യുദ്ധായിലേക്കുള്ള വഴിയിൽ എത്തിയപ്പോൾ എന്ത് ചെയ്തു?" and the correct answer is "ചുംബിച്ചു", 
-      DO NOT use simple distractors like "കരഞ്ഞു" or "തിരിച്ചു പോയി". 
-      Instead, use highly confusing distractors like: "കെട്ടിപിടിച്ചു", "കെട്ടിപിടിച്ചു ചുംബിച്ചു", "ആലിംഗനം ചെയ്തു".
+      STRATEGY 1: The "Bait and Switch" (The Overlap Trap)
+      Create 2 or 3 distractors that share heavily overlapping prefixes or suffixes. This tricks the user into thinking the correct answer must be a combination of those similar parts. However, since the ACTUAL correct answer is fixed, you must write the distractors so that the real answer looks like the "odd one out" that has nothing in common with your fake pattern.
       
-      CRITICAL INSTRUCTION: You MUST extract the questions. Do NOT return an empty array unless the chunk is completely blank.
+      STRATEGY 2: Phrase Interchanging (The Context Trap)
+      Take the actual correct answer and beautifully swap out the subject, verb, or biblical names with other highly plausible biblical terms. The distractors must be perfectly meaningful, grammatically flawless Malayalam sentences, but factually wrong for the specific question.
+      
+      STRATEGY 3: Subtle Spelling/Grammar Variants (The Visual Trap)
+      Create distractors that visually look almost identical to the correct answer but have 1 or 2 letters, syllables, or suffixes altered (e.g., changing tense, gender, or singular/plural). 
+      
+      STRATEGY 4: The "All Plausible" (The Knowledge Trap)
+      Write 3 completely distinct but highly believable biblical phrases that perfectly fit the context of the question. No overlapping words at all.
+      
+      CRITICAL INSTRUCTION: You MUST randomize these strategies. The correct answer must NOT always be the odd one out, nor always the longest, nor always the most distinct. Keep the quiz taker completely off-balance. Do NOT return an empty array unless the chunk is completely blank.
       
       Output strictly as a JSON object containing an array called "questions". Use the ACTUAL extracted text for questions and answers.
       
@@ -132,7 +138,7 @@ export async function POST(req: Request) {
             "id": 1,
             "question": "<Actual Malayalam Question>",
             "answer": "<Actual Correct Malayalam Answer>",
-            "options": ["<Correct Answer>", "<Highly Confusing Wrong Answer 1>", "<Highly Confusing Wrong Answer 2>", "<Highly Confusing Wrong Answer 3>"] 
+            "options": ["<Correct Answer>", "<Deceptive Wrong Answer 1>", "<Deceptive Wrong Answer 2>", "<Deceptive Wrong Answer 3>"] 
           }
         ]
       }
