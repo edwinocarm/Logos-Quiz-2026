@@ -102,6 +102,7 @@ export async function POST(req: Request) {
     for (let i = 0; i < chunks.length; i++) {
       console.log(`Processing chunk ${i + 1} of ${chunks.length} using API Key ${currentKeyIndex + 1}...`);
       
+      // --- THE NEW HIGH-DIFFICULTY PROMPT ---
       const prompt = `
       You are an elite, strict examiner for the Kerala Catholic Bible Society "Logos Quiz". 
       I am providing you with PART ${i + 1} of an extracted Malayalam text from a Bible quiz document for the book of ${book}, Chapter ${chapter}.
@@ -110,6 +111,15 @@ export async function POST(req: Request) {
       1. Extract all the valid questions and correct answers from THIS CHUNK of text.
       2. Remove any verse references attached to the answers.
       3. For EVERY question, generate exactly 3 WRONG answers (distractors) in Malayalam.
+      
+      CRITICAL INSTRUCTION FOR DISTRACTORS:
+      The distractors must be EXTREMELY difficult, nuanced, and highly confusing. They must look like they could be the correct Bible text. 
+      Do NOT use obvious wrong answers. Use slight variations, overlapping words, and synonyms of the correct answer. 
+      
+      EXAMPLE OF WHAT I WANT:
+      If the question is "അവർ യുദ്ധായിലേക്കുള്ള വഴിയിൽ എത്തിയപ്പോൾ എന്ത് ചെയ്തു?" and the correct answer is "ചുംബിച്ചു", 
+      DO NOT use simple distractors like "കരഞ്ഞു" or "തിരിച്ചു പോയി". 
+      Instead, use highly confusing distractors like: "കെട്ടിപിടിച്ചു", "കെട്ടിപിടിച്ചു ചുംബിച്ചു", "ആലിംഗനം ചെയ്തു".
       
       CRITICAL INSTRUCTION: You MUST extract the questions. Do NOT return an empty array unless the chunk is completely blank.
       
@@ -122,7 +132,7 @@ export async function POST(req: Request) {
             "id": 1,
             "question": "<Actual Malayalam Question>",
             "answer": "<Actual Correct Malayalam Answer>",
-            "options": ["<Correct Answer>", "<Tricky Wrong Answer 1>", "<Tricky Wrong Answer 2>", "<Tricky Wrong Answer 3>"] 
+            "options": ["<Correct Answer>", "<Highly Confusing Wrong Answer 1>", "<Highly Confusing Wrong Answer 2>", "<Highly Confusing Wrong Answer 3>"] 
           }
         ]
       }
@@ -216,6 +226,7 @@ export async function POST(req: Request) {
             console.log(`Found ${existingData.questions.length} existing questions. Merging...`);
             finalQuestions = [...existingData.questions, ...newQuestions];
         } else {
+            console.log("No existing quiz found to append to. Starting fresh.");
             finalQuestions = newQuestions;
         }
     } else {
@@ -242,6 +253,8 @@ export async function POST(req: Request) {
 
     if (dbError) return NextResponse.json({ error: "Database error: " + dbError.message }, { status: 500 });
     
+    console.log(`SUCCESS: Total of ${enhancedQuestions.length} questions saved to database!`);
+
     return NextResponse.json({ 
         success: true, 
         questionCount: enhancedQuestions.length, 
