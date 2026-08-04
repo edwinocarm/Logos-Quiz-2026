@@ -126,6 +126,13 @@ export async function POST(req: Request) {
       
       STRATEGY 4: The "All Plausible" (The Knowledge Trap)
       Write 3 completely distinct but highly believable biblical phrases that perfectly fit the context of the question. No overlapping words at all.
+
+      STRATEGY 5: Semantic Camouflage (The Tone/Category Match)
+      Distractors MUST match the exact sentiment, tone, and category of the correct answer. 
+      - If the correct answer is a NEGATIVE concept (e.g., 'മിദ്യയാണ്' / vanity), ALL distractors MUST also be negative (e.g., 'പാപമാണ്' / sin, 'വ്യർത്ഥമാണ്' / futile, 'നാശമാണ്' / destruction). NEVER use positive distractors against a negative answer.
+      - If the answer is a place, all distractors must be places.
+      - If the answer is a number, all distractors must be numbers. 
+      Never make the correct answer the only one with a specific tone or category.
       
       CRITICAL INSTRUCTION: You MUST randomize these strategies. The correct answer must NOT always be the odd one out, nor always the longest, nor always the most distinct. Keep the quiz taker completely off-balance. Do NOT return an empty array unless the chunk is completely blank.
       
